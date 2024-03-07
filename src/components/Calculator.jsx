@@ -1,6 +1,6 @@
 import Snap from "snapsvg-cjs";
 import { VideoCameraIcon } from "@heroicons/react/24/solid";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // setting up the calculator
 var elt = document.getElementById("calculator");
@@ -17,7 +17,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function Calculator() {
   const videoInputRef = useRef();
 
-  const [SvgPathsObject, setSvgPathsObject] = useState("");
+  const [frameBezierEquations, setFrameBezierEquations] = useState("");
   const [videoName, setVideoName] = useState("");
   const [buttonPulse, setButtonPulse] = useState(false);
 
@@ -37,8 +37,34 @@ function Calculator() {
         body: formData,
       });
 
-      const data = await response.json();
-      setSvgPathsObject(data);
+      // const data = await response.json();
+      const frames = await response.json();
+
+      const frameEquations = {};
+
+      // once we get the response convert the svg paths to bezier equations
+      for (const frame in frames) {
+        const curvePoints = Snap.path.toCubic(frames[frame]);
+
+        frameEquations[frame] = [];
+
+        curvePoints.forEach((curve, index) => {
+          const [curveSymbol, x1, y1, x2, y2, x, y] = curve;
+
+          if (curveSymbol !== "C") return;
+
+          // creating cubic bezier equations
+          const equation = `(${x1},${y1})(1-t)^3 + 3(${x2},${y2})(1-t)^2t + 3(${x},${y})(1-t)t^2 + (${x},${y})t^3`;
+
+          frameEquations[frame].push({
+            id: `exp${index}`,
+            color: "#000000",
+            latex: equation,
+          });
+        });
+      }
+
+      setFrameBezierEquations(frameEquations);
       setButtonPulse(true); // start run button animation
     } catch (e) {
       console.log(e);
@@ -48,32 +74,21 @@ function Calculator() {
   // run the animation
   const handleRunAnimation = async () => {
     // adding all the frames to the calculator
-    for (const frame in SvgPathsObject) {
+    for (const frame in frameBezierEquations) {
       // converting the svg paths to get the bezier curve points
-      const curvePoints = Snap.path.toCubic(SvgPathsObject[frame]);
 
-      curvePoints.forEach((curve, index) => {
-        const [curveSymbol, x1, y1, x2, y2, x, y] = curve;
+      const equations = frameBezierEquations[frame];
 
-        if (curveSymbol !== "C") return;
+      // adding the equation to the calculator
+      calculator.setExpressions(equations);
 
-        // creating cubic bezier equations
-        const equation = `(${x1},${y1})(1-t)^3 + 3(${x2},${y2})(1-t)^2t + 3(${x},${y})(1-t)t^2 + (${x},${y})t^3`;
-
-        // adding the equation to the calculator
-        calculator.setExpression({
-          id: `exp${index}`,
-          color: "#000000",
-          latex: equation,
-        });
-      });
-
-      await sleep(1000);
+      await sleep(2000);
 
       // remove all the equations for the current frame from the calculator
-      for (let index = 0; index < curvePoints.length; index++) {
-        calculator.removeExpression({ id: `exp${index}` });
-      }
+      calculator.removeExpressions(equations);
+      // for (let index = 0; index < equations.length; index++) {
+      //   calculator.removeExpression({ id: `exp${index}` });
+      // }
     }
   };
 
@@ -116,7 +131,7 @@ function Calculator() {
         className={`w-32 py-[10px]  rounded-[5px] cursor-pointer text-white disabled:bg-[#c2c2ff] ${
           buttonPulse ? "pulse" : ""
         }`}
-        disabled={SvgPathsObject === ""}
+        disabled={frameBezierEquations === ""}
       >
         Run Animation
       </button>
