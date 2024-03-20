@@ -1,5 +1,5 @@
 import Snap from "snapsvg-cjs";
-import { VideoCameraIcon } from "@heroicons/react/24/solid";
+import { CameraIcon, VideoCameraIcon } from "@heroicons/react/24/solid";
 import { useEffect, useRef, useState } from "react";
 
 // setting up the calculator
@@ -16,10 +16,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function Calculator() {
   const videoInputRef = useRef();
+  const imageInputRef = useRef();
 
   const [frameBezierEquations, setFrameBezierEquations] = useState("");
   const [videoName, setVideoName] = useState("");
+  const [imageName, setImageName] = useState("");
   const [buttonPulse, setButtonPulse] = useState(false);
+  const [renderType, setRenderType] = useState("video");
 
   // send the video to the backend and get the svg paths
   const handleVideoUpload = async () => {
@@ -66,6 +69,52 @@ function Calculator() {
 
       setFrameBezierEquations(frameEquations);
       setButtonPulse(true); // start run button animation
+      setRenderType("video");
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const handleImageUpload = async () => {
+    const formData = new FormData();
+
+    // adding the video file to be sent to the formData object
+    formData.append("image", imageInputRef.current.files[0]);
+
+    setImageName(""); // reset the video input
+
+    try {
+      // get the frames with a fps of 2
+      const response = await fetch("http://127.0.0.1:3000/convertImage", {
+        method: "POST",
+        body: formData,
+      });
+
+      // once we get the response convert the svg paths to bezier equations
+      const svgCurves = await response.json();
+
+      const curvePoints = Snap.path.toCubic(svgCurves);
+
+      const equations = [];
+
+      curvePoints.forEach((curve, index) => {
+        const [curveSymbol, x1, y1, x2, y2, x, y] = curve;
+
+        if (curveSymbol !== "C") return;
+
+        // creating cubic bezier equations
+        const equation = `(${x1},${y1})(1-t)^3 + 3(${x2},${y2})(1-t)^2t + 3(${x},${y})(1-t)t^2 + (${x},${y})t^3`;
+
+        equations.push({
+          id: `exp${index}`,
+          color: "#000000",
+          latex: equation,
+        });
+      });
+
+      setFrameBezierEquations(equations);
+      setButtonPulse(true); // start run button animation
+      setRenderType("image");
     } catch (e) {
       console.log(e);
     }
@@ -92,9 +141,13 @@ function Calculator() {
     }
   };
 
+  const handleRenderImage = () => {
+    calculator.setExpressions(frameBezierEquations);
+  };
+
   return (
     <div className="flex p-5 items-center justify-center space-x-4 ">
-      <form>
+      <form className="flex items-center justify-center space-x-4">
         <label
           // video selection element
           htmlFor="videoInput"
@@ -116,6 +169,28 @@ function Calculator() {
           />
           <span id="videoName">{videoName}</span>
         </label>
+
+        <label
+          // image selection element
+          htmlFor="imageInput"
+          className="flex flex-col items-center justify-center bg-[#7d7dff] px-[20px] py-[10px] rounded-[5px] cursor-pointer text-white"
+        >
+          Select Image
+          <CameraIcon className="h-8" />
+          <input
+            id="imageInput"
+            type="file"
+            className="hidden"
+            name="image"
+            ref={imageInputRef}
+            onChange={() => {
+              // change the file name on the selection button when the user selects a file
+              setImageName(imageInputRef.current.files[0].name);
+            }}
+            accept="image/png, image/bmp" // accept any type of video files
+          />
+          <span id="imageName">{imageName}</span>
+        </label>
       </form>
 
       <button
@@ -127,7 +202,17 @@ function Calculator() {
       </button>
 
       <button
-        onClick={handleRunAnimation}
+        className="w-32 bg-[#7d7dff] py-[10px]  rounded-[5px] cursor-pointer text-white disabled:bg-[#c2c2ff]"
+        disabled={imageName === ""}
+        onClick={handleImageUpload}
+      >
+        Upload Image
+      </button>
+
+      <button
+        onClick={
+          renderType === "video" ? handleRunAnimation : handleRenderImage
+        }
         className={`w-32 py-[10px]  rounded-[5px] cursor-pointer text-white disabled:bg-[#c2c2ff] ${
           buttonPulse ? "pulse" : ""
         }`}
